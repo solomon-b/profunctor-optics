@@ -1,0 +1,16 @@
+name:           profunctor-optics
+version:        0.1.0
+synopsis:       A prototype implementation of Profunctor Optics
+homepage:       http://www.github.com/ssbothwell/profunctor-optics
+category:       Education
+author:         Solomon Bothwell
+license:        BSD3
+license-file:   LICENSE
+cabal-version:  1.12
+build-type:     Simple
+
+library
+  build-depends:      base >=4.12 && <4.13
+                    , profunctors
+                    , invertible
+  exposed-modules:    Data.Optics
