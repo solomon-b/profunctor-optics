@@ -382,6 +382,7 @@ lensC2P (Lens v u) = dimap (fork v id) u . first
 lensP2C :: LensP a b s t -> Lens a b s t
 lensP2C l = l (Lens id fst)
 
+--type Optic p a b s t = p a b -> p s t
 type PrismP a b s t = forall p. CoCartesian p => Optic p a b s t
 
 instance Profunctor (Prism a b) where
@@ -396,3 +397,10 @@ instance CoCartesian (Prism a b) where
   right (Prism a b) =
     Prism (either (Left . Left) (plus Right id . a)) (Right . b)
 
+prismC2P :: Prism a b s t -> PrismP a b s t
+prismC2P (Prism m b) = dimap m (either id b) . right
+
+prismP2C :: PrismP a b s t -> Prism a b s t
+prismP2C l = l $ Prism Right id
+
+--data Prism a b s t = Prism { match :: s -> Either t a, build :: b -> t}
