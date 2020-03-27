@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -325,3 +326,73 @@ instance Applicative f => Monoidal (UpStar f) where
 
 pair :: Applicative f => (a -> f b) -> (c -> f d) -> (a, c) -> f (b, d)
 pair h k (x, y) = (,) <$> h x <*> k y
+
+
+--------------------------------------
+--- Optics In Terms of Profunctors ---
+--------------------------------------
+
+-- we represent data accessors as mappings between transformers:
+type Optic p a b s t = p a b -> p s t
+
+-- Informally, when S is a composite type with some component of type A, and T
+-- similarly a composite type in which that component has type B, and P is some
+-- notion of transformer, then we can think of a data accessor of type Optic P A
+-- B S T as lifting a component transformer of type P A B to a whole-structure
+-- transformer of type P S T.
+
+type AdapterP a b s t = forall p. Profunctor p => Optic p a b s t
+
+adapterC2P :: Adapter a b s t -> AdapterP a b s t
+adapterC2P (Adapter o i) = dimap o i
+
+instance Profunctor (Adapter a b) where
+  dimap :: (s' -> s) -> (t -> t') -> Adapter a b s t -> Adapter a b s' t'
+  dimap f g (Adapter o i) = Adapter (o . f) (g . i)
+
+-- S' -f-> S -o-> A
+-- B  -i>  T -g-> T'
+
+-- Now, we construct the trivial concrete adapter Adapter id id of type Adapter
+-- A B A B, and use the profunctor adapter to lift that to the desired concrete
+-- adapter:
+adapterP2C :: AdapterP a b s t -> Adapter a b s t
+adapterP2C l = l (Adapter id id)
+
+type LensP a b s t = forall p. Cartesian p => Optic p a b s t
+
+instance Profunctor (Lens a b) where
+  dimap :: (s' -> s) -> (t -> t') -> Lens a b s t -> Lens a b s' t'
+  dimap f g (Lens v u) = Lens (v . f) (g . u . cross id f)
+
+instance Cartesian (Lens a b) where
+  first :: Lens a b s t -> Lens a b (s, c) (t, c)
+  first (Lens v u) = Lens (v . fst) (fork (u . cross id fst) (snd . snd))
+  second :: Lens  a b s t -> Lens a b (c, s) (c, t)
+  second (Lens v u) = Lens (v . snd) (fork (fst . snd) (u . cross id snd))
+
+-- Note: This should be definable in terms of Cartesian and Category
+-- Control.Arrow.&&&
+fork :: (a -> b) -> (a -> c) -> a -> (b, c)
+fork f g x = (f x, g x)
+
+lensC2P :: Lens a b s t -> LensP a b s t
+lensC2P (Lens v u) = dimap (fork v id) u . first
+
+lensP2C :: LensP a b s t -> Lens a b s t
+lensP2C l = l (Lens id fst)
+
+type PrismP a b s t = forall p. CoCartesian p => Optic p a b s t
+
+instance Profunctor (Prism a b) where
+  dimap :: (s' -> s) -> (t -> t') -> Prism a b s t -> Prism a b s' t'
+  dimap f g (Prism a b) = Prism (plus g id . (a . f)) (g . b)
+
+instance CoCartesian (Prism a b) where
+  left :: Prism a b s t -> Prism a b (Either s c) (Either t c)
+  left (Prism a b) =
+    Prism (either (plus Left id . a) (Left . Right)) (Left . b)
+  right :: Prism a b s t -> Prism a b (Either c s) (Either c t)
+  right (Prism a b) =
+    Prism (either (Left . Left) (plus Right id . a)) (Right . b)
+
