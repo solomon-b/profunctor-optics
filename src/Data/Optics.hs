@@ -1,11 +1,9 @@
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Data.Optics where
 
 import Control.Monad.State
-import Control.Invertible.Monoidal
-import Data.Profunctor
-import Data.Profunctor.Strong
-import Data.Profunctor.Choice
 
 -----------------------
 --- Concrete Optics ---
@@ -200,3 +198,130 @@ inorderC = Traversal (inorder single)
 -------------------
 --- Profunctors ---
 -------------------
+
+class Profunctor p where
+  dimap :: (a' -> a) -> (b -> b') -> p a b -> p a' b'
+
+-- Laws:
+-- dimap id id = id
+-- dimap (f' . f) (g . g') = dimap f g . dimap f' g'
+
+instance Profunctor (->) where
+  dimap :: (a' -> a) -> (b -> b') -> (a -> b) -> (a' -> b')
+  dimap f g h = g . h . f
+
+newtype UpStar f a b = UpStar { unUpStar :: a -> f b }
+
+instance Functor f => Profunctor (UpStar f) where
+  dimap :: Functor f => (a' -> a) -> (b -> b') -> UpStar f a b -> UpStar f a' b'
+  dimap f g (UpStar h) = UpStar $ fmap g . h . f
+
+-- we say that a profunctor is cartesian if, informally, it can pass around some
+-- additional context in the form of a pair. This is represented by an
+-- additional method first that lifts a transformer of type P A B to one of type
+-- P (A×C) (B×C) for any type C, passing through an additional contextual value
+-- of type C:
+class Profunctor p => Cartesian p where
+  first :: p a b -> p (a, c) (b, c)
+  second :: p a b -> p (c, a) (c, b)
+
+-- Laws:
+-- dimap runit runit' h = first h
+-- dimap assoc assoc' (first (first h)) = first h
+-- and symmetrical laws for second
+-- where
+--   runit  :: (a, ()) -> a
+--   runit' :: a -> (a, ())
+--   assoc  :: (a, (b, c)) -> ((a, b), c)
+--   assoc' :: ((a, b), c) -> (a, (b, c))
+
+-- one might call such profunctors cartesianly strong, because first acts as a
+-- categorical ‘strength’ with respect to cartesian product; we abbreviate this
+-- more precise term to simply ‘cartesian’. The function arrow is obviously
+-- cartesian
+
+-- we say that a profunctor is cartesian if, informally, it can pass around some
+-- additional context in the form of a pair.
+instance Cartesian (->) where
+  first :: (a -> b) -> (a, c) -> (b, c)
+  first h = cross h id
+  second :: (a -> b) -> (c, a) -> (c, b)
+  second h = cross id h
+
+-- Control.Arrow.***
+cross :: (b -> c) -> (b' -> c') -> ((b, b') -> (c, c'))
+cross f g (x, y) = (f x, g y)
+
+instance Functor f => Cartesian (UpStar f) where
+  first :: Functor f => UpStar f a b -> UpStar f (a, c) (b, c)
+  first (UpStar unUpStar) = UpStar $ rstrength . cross unUpStar id
+  second :: Functor f => UpStar f a b -> UpStar f (c, a) (c, b)
+  second (UpStar unUpStar) = UpStar $ lstrength . cross id unUpStar
+
+rstrength :: Functor f => (f a, b) -> f (a, b)
+rstrength (fx, y) = fmap (, y) fx
+
+lstrength :: Functor f => (a, f b) -> f (a, b)
+lstrength (x, fy) = fmap (x ,) fy
+
+-- profunctors that can be lifted to act on sum types: 
+class Profunctor p => CoCartesian p where
+  left :: p a b -> p (Either a c) (Either b c)
+  right :: p a b -> p (Either c a) (Either c b)
+
+-- Laws:
+-- dimap rzero rzero' h = left h
+-- dimap coassoc' coassoc (left (left h)) = left h
+-- and symmetrically for right
+-- where
+-- rzero :: Either a Void -> a
+-- rzero' :: a -> Either a Void
+-- coassoc :: Either a (Either b c) -> Either (Either a b) c
+-- coassoc' :: Either (Either a b) c -> Either a (Either b c)
+
+instance CoCartesian (->) where
+  left :: (a -> b) -> (Either a c -> Either b c)
+  left h = plus h id
+  right :: (a -> b) -> (Either c a -> Either c b)
+  right h = plus id h
+
+
+plus :: (a -> a') -> (b -> b') -> Either a b -> Either a' b'
+plus f g (Left x) = Left (f x)
+plus f g (Right y) = Right (g y)
+
+instance Applicative f => CoCartesian (UpStar f) where
+  left :: Functor f => UpStar f a b -> UpStar f (Either a c) (Either b c)
+  left (UpStar unUpStar) = UpStar $ either (fmap Left . unUpStar) (pure . Right)
+  right :: Functor f => UpStar f a b -> UpStar f (Either c a) (Either c b)
+  right (UpStar unUpStar) = UpStar $ either (pure . Left) (fmap Right . unUpStar)
+
+-- The third refinement is a class of profunctors that support a form of
+-- parallel com- position (in the sense of ‘independent’ rather than
+-- ‘concurrent’):
+class Profunctor p => Monoidal p where
+  par :: p a b -> p c d -> p (a, c) (b, d)
+  empty :: p () ()
+
+-- Laws:
+-- dimap assoc assoc' (par (par h j) k) = par h (par j k)
+-- dimap runit runit' h = par h empty
+-- dimap lunit lunit' h = par empty h
+-- where
+-- lunit :: ((), a) -> a
+-- lunit' :: a -> ((), a)
+
+instance Monoidal (->) where
+  par :: (a -> b) -> (c -> d) -> ((a, c) -> (b, d))
+  par = cross
+  empty :: () -> ()
+  empty = id
+
+instance Applicative f => Monoidal (UpStar f) where
+  par :: Applicative f => UpStar f a b -> UpStar f c d -> UpStar f (a, c) (b, d)
+  par h k = UpStar (pair (unUpStar h) (unUpStar k))
+  empty :: Applicative f => UpStar f () ()
+  empty = UpStar pure
+
+pair :: Applicative f => (a -> f b) -> (c -> f d) -> (a, c) -> f (b, d)
+pair h k (x, y) = (,) <$> h x <*> k y
