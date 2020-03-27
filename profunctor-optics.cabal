@@ -10,8 +10,10 @@ cabal-version:  1.12
 build-type:     Simple
 
 library
-  build-depends:      base >=4.12 && <4.13
-                    , profunctors
-                    , invertible
-                    , mtl
-  exposed-modules:    Data.Optics
+  build-depends:       base >=4.12 && <4.13
+                     , profunctors
+                     , invertible
+                     , mtl
+  exposed-modules:     Data.Optics
+  visibility:          public
+  hs-source-dirs:      src
