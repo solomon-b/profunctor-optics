@@ -382,7 +382,6 @@ lensC2P (Lens v u) = dimap (fork v id) u . first
 lensP2C :: LensP a b s t -> Lens a b s t
 lensP2C l = l (Lens id fst)
 
---type Optic p a b s t = p a b -> p s t
 type PrismP a b s t = forall p. CoCartesian p => Optic p a b s t
 
 instance Profunctor (Prism a b) where
@@ -403,4 +402,22 @@ prismC2P (Prism m b) = dimap m (either id b) . right
 prismP2C :: PrismP a b s t -> Prism a b s t
 prismP2C l = l $ Prism Right id
 
---data Prism a b s t = Prism { match :: s -> Either t a, build :: b -> t}
+--data Traversal a b s t = Traversal { extract :: s  -> FunList a b t}
+
+-- The key step in the profunctor representation of traversals is to identify a
+-- function traverse that lifts a transformation k :: P A B from As to Bs to act
+-- on each of the elements of a FunList in order:
+traverse' :: (CoCartesian p, Monoidal p) => p a b -> p (FunList a c t) (FunList b c t)
+traverse' k = dimap out inn . right . par k $ traverse' k
+
+--par :: (a -> b) -> (c -> d) -> ((a, c) -> (b, d))
+
+type TraversalP a b s t =
+  forall p. (Cartesian p, CoCartesian p, Monoidal p) => Optic p a b s t
+
+traversalC2P :: Traversal a b s t -> TraversalP a b s t
+traversalC2P (Traversal h) = dimap h fuse . traverse'
+
+--instance Profunctor (Traversal a b) where
+--  dimap :: (s' -> s) -> (t -> t') -> Traversal a b s t -> Traversal a b s' t'
+--  dimap f g (Traversal h) = Traversal $ h . f 
