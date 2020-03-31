@@ -7,7 +7,7 @@
 module Data.Optics where
 
 import Control.Monad.State
-import Data.Coerce
+import Data.Monoid
 
 -----------------------
 --- Concrete Optics ---
@@ -317,7 +317,7 @@ class Profunctor p => Monoidal p where
 
 instance Monoidal (->) where
   par :: (a -> b) -> (c -> d) -> ((a, c) -> (b, d))
-  par = cross
+  par = mux
   empty :: () -> ()
   empty = id
 
@@ -425,7 +425,7 @@ type Traversal' a b s t = UpStar (FunList a b) s t
 
 -- Sitting between Arrow (Strong Category) and Profunctor we have:
 class Profunctor p => Mux p where
-  -- this is ***/cross
+  -- this is generalized ***/cross
   mux :: p a b -> p c d -> p (a, c) (b, d)
 
 instance Mux (->) where
@@ -492,15 +492,76 @@ instance Cartesian (Forget r) where
 traverseOf :: TraversalP a b s t -> (forall f. Applicative f => (a -> f b) -> s -> f t)
 traverseOf p = unUpStar . p . UpStar
 
+---------------------------------
 -- Composing Profunctor Optics --
+---------------------------------
 
-  --first :: p a b -> p (a, c) (b, c)
-  --second :: p a b -> p (c, a) (c, b)
-pi1' :: LensP a b (a, c) (b, c)
-pi1' = dimap fst undefined
+  --first :: (a -> b) -> (a, c) -> (b, c)
+  --first h = cross h id
+  --second :: (a -> b) -> (c, a) -> (c, b)
+  --second h = cross id h
 
+  -- (&&&)
+  --fork :: (a -> b) -> (a -> c) -> a -> (b, c)
+  --fork f g x = (f x, g x)
+
+  -- (***)
+  --cross :: (b -> c) -> (b' -> c') -> ((b, b') -> (c, c'))
+  --cross f g (x, y) = (f x, g y)
+  --mux :: (a -> a') -> (b -> b') -> ((a,b) -> (a', b'))
+  --mux f g (a, b) = (f a, g b)
+
+pi1P :: LensP a b (a, c) (b, c)
+--pi1P = first
+pi1P = dimap (fork fst id) (cross id snd) . first
+
+pi2P :: LensP a b (c, a) (c, b)
+pi2P = second
+
+pi11P :: LensP a b ((a, c), d) ((b, c), d)
+pi11P = pi1P . pi1P
+
+  --left :: p a b -> p (Either a c) (Either b c)
+  --right :: p a b -> p (Either c a) (Either c b)
+theP :: PrismP a b (Maybe a) (Maybe b)
+theP = dimap (maybe (Left Nothing) Right) (either id Just) . right
+
+thepi1P :: (Cartesian p, CoCartesian p) => Optic p a b (Maybe (a, c)) (Maybe (b, c))
+thepi1P = theP . pi1P
+
+pi1theP :: (Cartesian p, CoCartesian p) => Optic p a b (Maybe a, c) (Maybe b, c)
+pi1theP = pi1P . theP
+
+inorderP :: TraversalP a b (Tree a) (Tree b)
+inorderP = traversalC2P inorderC
+
+inorderpi1P :: TraversalP a b (Tree (a, c)) (Tree (b, c))
+inorderpi1P = inorderP . pi1P
+
+-- Once we have given such an optic specifying how to access the elements in the
+-- tree, we can actually ‘apply’ the optic by turning it back into a traversal
+-- function using traverseOf.
+-- For example, applying it to the body function countOdd will yield a traversal
+-- of trees of pairs whose first components are integers, counting the odd ones
+-- and returning their parities:
+inorderpi1T :: Tree (Integer, c) -> State Integer (Tree (Bool, c))
+inorderpi1T = traverseOf inorderpi1P countOdd
+
+-- NOTE: Something odd with this example
+-- Similarly, we can compose inorderP with a prism, the, to count the odd
+-- integers in a tree which optionally contains values at its nodes:
+inordertheP :: Tree (Maybe Integer) -> State Integer (Tree (Maybe Bool))
+inordertheP = traverseOf (inorderP . theP) countOdd
+
+------------------------------
+-- The Contact Book Example --
+------------------------------
+--- View
 viewP :: forall a b s t. (forall p. Cartesian p => p a b -> p s t) -> s -> a
 viewP l = unForget $ l (Forget id)
+
+--previewP :: forall a b s t. (forall p. (Cartesian p, CoCartesian p) => p a b -> p s t) -> s -> a
+--previewP l = unForget $ l (Forget _)
 
 --pi1' :: LensP a b (a, c) (b, c)
 --pi1' = lensC2P pi1
