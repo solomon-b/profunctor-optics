@@ -113,7 +113,7 @@ pi11' = Lens _view _update
 inc :: Bool -> State Integer Bool
 inc b = state (\n -> (b, n + 1))
 
-data Tree a = Empty | Node (Tree a) a (Tree a)
+data Tree a = Empty | Node (Tree a) a (Tree a) deriving Show
 
 inorder :: Applicative f => (a -> f b) -> Tree a -> f (Tree b)
 inorder _ Empty = pure Empty
@@ -475,19 +475,8 @@ instance Monoidal (Traversal a b) where
 traversalP2C :: TraversalP a b s t -> Traversal a b s t
 traversalP2C l = l $ Traversal $ \a -> More a $ Done id
 
--- View --
-
-newtype Forget r a b = Forget { unForget :: a -> r }
-
-instance Profunctor (Forget r) where
-  dimap :: (a' -> a) -> (b -> b') -> Forget r a b -> Forget r a' b'
-  dimap f g (Forget h) = Forget $ h . f
-
-instance Cartesian (Forget r) where
-  first :: Forget r a b -> Forget r (a, c) (b, c)
-  first (Forget h) = Forget $ \(a, c) -> h a
-  second :: Forget r a b -> Forget r (c, a) (c, b)
-  second (Forget h) = Forget $ \(c, a) -> h a
+traverseOf' :: forall f a b s t. Optic (UpStar f) a b s t -> (a -> f b) -> s -> f t
+traverseOf' p = unUpStar . p . UpStar
 
 traverseOf :: TraversalP a b s t -> (forall f. Applicative f => (a -> f b) -> s -> f t)
 traverseOf p = unUpStar . p . UpStar
@@ -556,7 +545,60 @@ inordertheP = traverseOf (inorderP . theP) countOdd
 ------------------------------
 -- The Contact Book Example --
 ------------------------------
---- View
+
+type Number  = String
+type ID      = String
+type Name    = String
+data Contact = Phone Number | Skype ID deriving Show
+data Entry   = Entry Name Contact deriving Show
+type Book    = Tree Entry
+
+testBook :: Tree Entry
+testBook = Node (Node Empty e2 (Node Empty e4 Empty)) e1 (Node Empty e3 Empty)
+  where
+    e1 = Entry "Solomon" (Phone "123-4567")
+    e2 = Entry "Fred" (Phone "789-1234")
+    e3 = Entry "John" (Phone "987-6547")
+    e4 = Entry "Joe" (Skype "1346349")
+
+phone :: PrismP Number Number Contact Contact
+phone = prismC2P (Prism m Phone) where
+  m (Phone n) = Right n
+  m (Skype s) = Left (Skype s)
+
+contact :: LensP Contact Contact Entry Entry
+contact = lensC2P (Lens v u) where
+  v (Entry n c) = c
+  u (c', Entry n c) = Entry n c'
+
+contactPhone :: TraversalP Number Number Entry Entry
+contactPhone = contact . phone
+
+bookPhones :: TraversalP Number Number Book Book
+bookPhones = inorderP . contact . phone
+
+tidyNumber :: Number -> Number
+tidyNumber num = "323-" ++ num
+
+tidyBook :: Book -> Book
+tidyBook = bookPhones tidyNumber
+
+
+---------------------------
+--- Various Combinators ---
+---------------------------
+newtype Forget r a b = Forget { unForget :: a -> r }
+
+instance Profunctor (Forget r) where
+  dimap :: (a' -> a) -> (b -> b') -> Forget r a b -> Forget r a' b'
+  dimap f g (Forget h) = Forget $ h . f
+
+instance Cartesian (Forget r) where
+  first :: Forget r a b -> Forget r (a, c) (b, c)
+  first (Forget h) = Forget $ \(a, c) -> h a
+  second :: Forget r a b -> Forget r (c, a) (c, b)
+  second (Forget h) = Forget $ \(c, a) -> h a
+
 viewP :: forall a b s t. (forall p. Cartesian p => p a b -> p s t) -> s -> a
 viewP l = unForget $ l (Forget id)
 
