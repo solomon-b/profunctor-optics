@@ -425,8 +425,12 @@ type Traversal' a b s t = UpStar (FunList a b) s t
 
 -- Sitting between Arrow (Strong Category) and Profunctor we have:
 class Profunctor p => Mux p where
-  -- this is &&&/fork
+  -- this is ***/cross
   mux :: p a b -> p c d -> p (a, c) (b, d)
+
+instance Mux (->) where
+  mux :: (a -> a') -> (b -> b') -> ((a,b) -> (a', b'))
+  mux f g (a, b) = (f a, g b)
 
 instance Applicative p => Mux (UpStar p) where
   mux :: UpStar p a b -> UpStar p c d -> UpStar p (a, c) (b, d)
@@ -434,6 +438,10 @@ instance Applicative p => Mux (UpStar p) where
 
 class Profunctor p => Demux p where
   demux :: p a b -> p c d -> p (Either a c) (Either b d)
+
+instance Demux (->) where
+  demux :: (a -> b) -> (c -> d) -> Either a c -> Either b d
+  demux f g = either (Left . f) (Right . g)
 
 instance Functor p => Demux (UpStar p) where
   demux :: UpStar p a b -> UpStar p c d -> UpStar p (Either a c) (Either b d)
@@ -484,5 +492,16 @@ instance Cartesian (Forget r) where
 traverseOf :: TraversalP a b s t -> (forall f. Applicative f => (a -> f b) -> s -> f t)
 traverseOf p = unUpStar . p . UpStar
 
+-- Composing Profunctor Optics --
+
+  --first :: p a b -> p (a, c) (b, c)
+  --second :: p a b -> p (c, a) (c, b)
+pi1' :: LensP a b (a, c) (b, c)
+pi1' = dimap fst undefined
+
 viewP :: forall a b s t. (forall p. Cartesian p => p a b -> p s t) -> s -> a
 viewP l = unForget $ l (Forget id)
+
+--pi1' :: LensP a b (a, c) (b, c)
+--pi1' = lensC2P pi1
+
