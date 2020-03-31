@@ -481,5 +481,8 @@ instance Cartesian (Forget r) where
   second :: Forget r a b -> Forget r (c, a) (c, b)
   second (Forget h) = Forget $ \(c, a) -> h a
 
+traverseOf :: TraversalP a b s t -> (forall f. Applicative f => (a -> f b) -> s -> f t)
+traverseOf p = unUpStar . p . UpStar
+
 viewP :: forall a b s t. (forall p. Cartesian p => p a b -> p s t) -> s -> a
 viewP l = unForget $ l (Forget id)
