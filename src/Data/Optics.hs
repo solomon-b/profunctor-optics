@@ -2,9 +2,12 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
 module Data.Optics where
 
 import Control.Monad.State
+import Data.Coerce
 
 -----------------------
 --- Concrete Optics ---
@@ -418,6 +421,65 @@ type TraversalP a b s t =
 traversalC2P :: Traversal a b s t -> TraversalP a b s t
 traversalC2P (Traversal h) = dimap h fuse . traverse'
 
---instance Profunctor (Traversal a b) where
---  dimap :: (s' -> s) -> (t -> t') -> Traversal a b s t -> Traversal a b s' t'
---  dimap f g (Traversal h) = Traversal $ h . f 
+type Traversal' a b s t = UpStar (FunList a b) s t
+
+-- Sitting between Arrow (Strong Category) and Profunctor we have:
+class Profunctor p => Mux p where
+  -- this is &&&/fork
+  mux :: p a b -> p c d -> p (a, c) (b, d)
+
+instance Applicative p => Mux (UpStar p) where
+  mux :: UpStar p a b -> UpStar p c d -> UpStar p (a, c) (b, d)
+  mux (UpStar pab) (UpStar pcd) = UpStar $ \(a, c) -> (,) <$> pab a <*> pcd c
+
+class Profunctor p => Demux p where
+  demux :: p a b -> p c d -> p (Either a c) (Either b d)
+
+instance Functor p => Demux (UpStar p) where
+  demux :: UpStar p a b -> UpStar p c d -> UpStar p (Either a c) (Either b d)
+  demux (UpStar f) (UpStar g) = UpStar $ either (fmap Left . f) (fmap Right . g)
+
+instance Profunctor (Traversal a b) where
+  dimap :: (s' -> s) -> (t -> t') -> Traversal a b s t -> Traversal a b s' t'
+  dimap f g (Traversal h) = Traversal $ fmap g . h . f
+
+instance Cartesian  (Traversal a b) where
+  first :: Traversal a b s t -> Traversal a b  (s, c) (t, c)
+  first (Traversal h) = Traversal $ \(s, c) -> (, c) <$> h s
+  --first (Traversal h) = Traversal $ unUpStar $ mux (UpStar h) (UpStar pure)
+  second :: Traversal a b s t -> Traversal a b (c, s) (c, t)
+  second (Traversal h) = Traversal $ \(c, s) -> (c,) <$> h s
+
+instance CoCartesian (Traversal a b) where
+  left :: Traversal a b s t -> Traversal a b (Either s c) (Either t c)
+  left (Traversal h) = Traversal $ either (fmap Left . h) (pure . Right)
+  --left (Traversal h) = Traversal $ unUpStar $ demux (UpStar h) (UpStar pure)
+  right :: Traversal a b s t -> Traversal a b (Either c s) (Either c t)
+  right (Traversal h) = undefined
+
+-- Asad says i probably wont need Monoidal with Mux
+instance Monoidal (Traversal a b) where
+  par :: Traversal a b s t -> Traversal a b s' t' -> Traversal a b (s, s') (t, t')
+  par (Traversal f) (Traversal g) = Traversal $ unUpStar $ mux (UpStar f) (UpStar g)
+  empty :: Traversal a b () ()
+  empty = Traversal $ unUpStar $ UpStar pure
+
+traversalP2C :: TraversalP a b s t -> Traversal a b s t
+traversalP2C l = l $ Traversal $ \a -> More a $ Done id
+
+-- View --
+
+newtype Forget r a b = Forget { unForget :: a -> r }
+
+instance Profunctor (Forget r) where
+  dimap :: (a' -> a) -> (b -> b') -> Forget r a b -> Forget r a' b'
+  dimap f g (Forget h) = Forget $ h . f
+
+instance Cartesian (Forget r) where
+  first :: Forget r a b -> Forget r (a, c) (b, c)
+  first (Forget h) = Forget $ \(a, c) -> h a
+  second :: Forget r a b -> Forget r (c, a) (c, b)
+  second (Forget h) = Forget $ \(c, a) -> h a
+
+viewP :: forall a b s t. (forall p. Cartesian p => p a b -> p s t) -> s -> a
+viewP l = unForget $ l (Forget id)
