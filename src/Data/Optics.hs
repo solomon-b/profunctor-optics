@@ -50,29 +50,54 @@ instance Applicative f => Monoidal (Star f) where
   empty :: Star f () ()
   empty = Star $ \() -> pure ()
 
-type Optic p a b s t = p a b -> p s t
+type Optic p s t a b = p a b -> p s t
 
 ---------------
 --- Adapter ---
 ---------------
 
-type Adapter a b s t = forall p. Profunctor p => Optic p a b s t
+type Adapter s t a b = forall p. Profunctor p => Optic s t a b
+
+from :: Adapter s t a b -> s -> a
+from = undefined
+
+to :: Adapter s t a b -> b -> t
+to = undefined
 
 ------------
 --- Lens ---
 ------------
 
-type Lens a b s t = forall p. Strong p => Optic p a b s t
+type Lens s t a b = forall p. Strong p => Optic s t a b
+
+lens :: forall s t a b. (s -> a) -> (b -> s -> t) -> Lens s t a b
+lens = undefined
+
+view :: forall s t a b. Lens s t a b -> s a
+view = undefined
+
+over :: forall s t a b. Lens s t a b -> (a -> b) -> s -> t
+over = undefined
+
+update :: forall s t a b. Lens s t a b -> b -> s -> t
+update = undefined
 
 -------------
 --- Prism ---
 -------------
 
-type Prism a b s t = forall p. Choice p => Optic p a b s t
+type Prism s t a b = forall p. Choice p => Optic s t a b
+
+prism :: forall s t a b. (b -> t) -> (s -> Either t a) -> Prism s t a b
+prism = undefined
+
 
 -----------------
 --- Traversal ---
 -----------------
 
-type Traversal a b s t =
-  forall p. (Strong p, Choice p, Monoidal p) => Optic p a b s t
+type Traversal s t a b =
+  forall p. (Strong p, Choice p, Monoidal p) => Optic s t a b
+
+traverseOf :: Traversal s t a b -> (forall f. Applicative f => (a -> f b) -> s -> f t)
+traverseOf p = runStar . p . Star
