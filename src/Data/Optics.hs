@@ -1,9 +1,9 @@
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 module Data.Optics where
 
+import Data.Monoid
 import Data.Profunctor
 
 class Profunctor p => Mux p where
@@ -50,54 +50,75 @@ instance Applicative f => Monoidal (Star f) where
   empty :: Star f () ()
   empty = Star $ \() -> pure ()
 
+--------------
+--- Optics ---
+--------------
+
 type Optic p s t a b = p a b -> p s t
 
 ---------------
 --- Adapter ---
 ---------------
 
-type Adapter s t a b = forall p. Profunctor p => Optic s t a b
+type Adapter s t a b = forall p. Profunctor p => Optic p s t a b
 
 from :: Adapter s t a b -> s -> a
-from = undefined
+from adapt = undefined
 
 to :: Adapter s t a b -> b -> t
-to = undefined
+to adapt = undefined
+
+--------------
+--- Setter ---
+--------------
+
+type Setter s t a b = Optic (->) s t a b
+
+over :: forall s t a b. Setter s t a b -> (a -> b) -> s -> t
+over = undefined
+
+set :: forall s t a b. Setter s t a b -> b -> s -> t
+set = undefined
 
 ------------
 --- Lens ---
 ------------
 
-type Lens s t a b = forall p. Strong p => Optic s t a b
+type Lens s t a b = forall p. Strong p => Optic p s t a b
 
 lens :: forall s t a b. (s -> a) -> (b -> s -> t) -> Lens s t a b
-lens = undefined
+lens v s = undefined
 
-view :: forall s t a b. Lens s t a b -> s a
-view = undefined
-
-over :: forall s t a b. Lens s t a b -> (a -> b) -> s -> t
-over = undefined
-
-update :: forall s t a b. Lens s t a b -> b -> s -> t
-update = undefined
+view :: forall s t a b. Lens s t a b -> s ->  a
+view l = undefined
 
 -------------
 --- Prism ---
 -------------
 
-type Prism s t a b = forall p. Choice p => Optic s t a b
+type Prism s t a b = forall p. Choice p => Optic p s t a b
 
 prism :: forall s t a b. (b -> t) -> (s -> Either t a) -> Prism s t a b
 prism = undefined
 
+------------
+--- Fold ---
+------------
+
+type Fold r s t a b = Optic (Forget r) s t a b
+
+preview :: forall s t a b. Fold (First a) s t a b -> s -> Maybe a
+preview = undefined
+
+foldMapOf :: forall s t a b r. Fold r s t a b -> (a -> r) -> s -> r
+foldMapOf = undefined
 
 -----------------
 --- Traversal ---
 -----------------
 
 type Traversal s t a b =
-  forall p. (Strong p, Choice p, Monoidal p) => Optic s t a b
+  forall p. (Strong p, Choice p, Monoidal p) => Optic p s t a b
 
 traverseOf :: Traversal s t a b -> (forall f. Applicative f => (a -> f b) -> s -> f t)
 traverseOf p = runStar . p . Star
