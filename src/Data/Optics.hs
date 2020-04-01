@@ -1,10 +1,15 @@
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Data.Optics where
 
 import Data.Monoid
 import Data.Profunctor
+import Data.Foldable
+import Control.Applicative
+import Control.Monad.Identity
 
 -------------------
 --- Typeclasses ---
@@ -19,6 +24,10 @@ class Profunctor p => Demux p where
 class Profunctor p => Monoidal p where
   par :: p a b -> p c d -> p (a, c) (b, d)
   empty :: p () ()
+
+class (Strong p, Choice p) => Wander p where
+  wander :: forall s t a b.
+    (forall f. Applicative f => (a -> f b) -> s -> f t) -> p a b -> p s t
 
 -------------------
 --- Profunctors ---
@@ -43,6 +52,10 @@ instance Monoidal (->) where
   empty :: () -> ()
   empty = id
 
+instance Wander (->) where
+  wander :: (forall f. Applicative f => (a -> f b) -> s -> f t) -> (a -> b) -> (s -> t)
+  wander trav f = runIdentity $ (\x -> Identity (runIdentity . x)) $ trav (Identity . f)
+
 -- newtype Star f d c = Star { runStar :: d -> f c }
 
 instance Applicative f => Mux (Star f) where
@@ -61,6 +74,11 @@ instance Applicative f => Monoidal (Star f) where
 
   empty :: Star f () ()
   empty = Star $ \() -> pure ()
+
+instance Applicative f => Wander (Star f) where
+  wander :: (forall f. Applicative f => (a -> f b) -> s -> f t)
+    -> Star f a b -> Star f s t
+  wander trav (Star f) = Star $ trav f
 
 newtype Tagged a b = Tagged { unTagged :: b }
 
@@ -86,6 +104,11 @@ instance Monoidal Tagged where
   empty = Tagged ()
 
 -- newtype Forget r a b = Forget { runForget :: a -> r }
+
+instance Monoid r => Wander (Forget r) where
+  wander :: (forall f. Applicative f => (a -> f b) -> s -> f t)
+    -> Forget r a b -> Forget r s t
+  wander trav (Forget f) = (\g -> Forget (getConst . g)) $ trav $ Const . f
 
 --------------
 --- Optics ---
@@ -158,6 +181,7 @@ _2 = lens snd (\(c, _) b -> (c, b))
 -------------
 
 type Prism s t a b = forall p. Choice p => Optic p s t a b
+
 prism :: forall s t a b. (b -> t) -> (s -> Either t a) -> Prism s t a b
 prism to from pab = dimap from (either id id) $ right' $ rmap to pab
 
@@ -190,17 +214,24 @@ _Nil = prism pure $ \case
 type Fold r s t a b = Optic (Forget r) s t a b
 
 preview :: forall s t a b. Fold (First a) s t a b -> s -> Maybe a
-preview f s = getFirst . (\g -> g s) . runForget $ f (Forget $ \a -> First $ Just a)
+preview f s = getFirst . ($ s) . runForget $ f (Forget $ \a -> First $ Just a)
+
+previewOn :: forall s t a b. s -> Fold (First a) s t a b -> Maybe a
+previewOn s f = preview f s
 
 foldMapOf :: forall s t a b r. Fold r s t a b -> (a -> r) -> s -> r
-foldMapOf = undefined
+foldMapOf f g = runForget $ f (Forget g)
 
 -----------------
 --- Traversal ---
 -----------------
 
-type Traversal s t a b =
-  forall p. (Strong p, Choice p, Monoidal p) => Optic p s t a b
+type Traversal s t a b = forall p. Wander p => Optic p s t a b
+--type Traversal s t a b =
+--  forall p. (Strong p, Choice p, Monoidal p) => Optic p s t a b
+
+traversed :: forall t a b. Traversable t => Traversal (t a) (t b) a b
+traversed = wander traverse
 
 traverseOf :: Traversal s t a b -> (forall f. Applicative f => (a -> f b) -> s -> f t)
 traverseOf p = runStar . p . Star
