@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -24,9 +25,11 @@ class Profunctor p => Mux p where
 class Profunctor p => Demux p where
   demux :: p a b -> p c d -> p (Either a c) (Either b d)
 
-class Profunctor p => Monoidal p where
-  par :: p a b -> p c d -> p (a, c) (b, d)
-  empty :: p () ()
+class Mux p => Muxative p where
+  terminal :: p () ()
+
+passthru :: (Strong p, Muxative p) => p a a
+passthru = dimap ((),) snd $ first' terminal
 
 class (Strong p, Choice p) => Wander p where
   wander :: forall s t a b.
@@ -48,12 +51,9 @@ instance Demux (->) where
     Left a  -> Left (f a)
     Right c -> Right (g c)
 
-instance Monoidal (->) where
-  par :: (a -> b) -> (c -> d) -> (a, c) -> (b, d)
-  par = mux
-
-  empty :: () -> ()
-  empty = id
+instance Muxative (->) where
+  terminal :: () -> ()
+  terminal = id
 
 instance Wander (->) where
   wander :: (forall f. Applicative f => (a -> f b) -> s -> f t) -> (a -> b) -> (s -> t)
@@ -71,12 +71,9 @@ instance Functor f => Demux (Star f) where
     Left a -> Left <$> f a
     Right c -> Right <$> g c
 
-instance Applicative f => Monoidal (Star f) where
-  par :: Star f a b -> Star f c d -> Star f (a, c) (b, d)
-  par = mux
-
-  empty :: Star f () ()
-  empty = Star $ \() -> pure ()
+instance Applicative f => Muxative (Star f) where
+  terminal :: Star f () ()
+  terminal = Star $ \() -> pure ()
 
 instance Applicative f => Wander (Star f) where
   wander :: (forall f. Applicative f => (a -> f b) -> s -> f t)
@@ -99,12 +96,9 @@ instance Mux Tagged where
   mux :: Tagged a b -> Tagged c d -> Tagged (a, c) (b, d)
   mux (Tagged b) (Tagged d) = Tagged (b, d)
 
-instance Monoidal Tagged where
-  par :: Tagged a b -> Tagged c d -> Tagged (a, c) (b, d)
-  par = mux
-
-  empty :: Tagged () ()
-  empty = Tagged ()
+instance Muxative Tagged where
+  terminal :: Tagged () ()
+  terminal = Tagged ()
 
 -- newtype Forget r a b = Forget { runForget :: a -> r }
 
@@ -284,8 +278,24 @@ foldOf fold = foldMapOf fold id
 foldrOf :: forall s t a b r. Fold (Endo r) s t a b -> (a -> r -> r) -> r -> s -> r
 foldrOf fold f r = flip appEndo r . foldMapOf fold (Endo . f)
 
+foldlOf :: forall s t a b r.
+  Fold (Dual (Endo r)) s t a b -> (r -> a -> r) -> r -> s -> r
+foldlOf fold f r = flip appEndo r . getDual . foldMapOf fold (Dual . Endo . flip f)
+
 folded :: forall g a b t r. Monoid r => Foldable g => Fold r (g a) b a t
 folded  = Forget . foldMap . runForget
+
+toListOf :: forall s t a b. Fold (Endo [a]) s t a b -> s -> [a]
+toListOf fold = foldrOf fold (:) []
+
+infixl 8 ^..
+(^..) = toListOfOn
+
+toListOfOn :: forall s t a b. s -> Fold (Endo [a]) s t a b -> [a]
+toListOfOn = flip toListOf
+
+filtered :: forall p a. Choice p => (a -> Bool) -> Optic p a a a a
+filtered pred = dimap (\a -> if pred a then Right a else Left a) (either id id) . right'
 
 -----------------
 --- Traversal ---
@@ -293,10 +303,13 @@ folded  = Forget . foldMap . runForget
 
 type Traversal s t a b = forall p. Wander p => Optic p s t a b
 --type Traversal s t a b =
---  forall p. (Strong p, Choice p, Monoidal p) => Optic p s t a b
+--  forall p. (Strong p, Choice p, Muxative p) => Optic p s t a b
 
 traversed :: forall t a b. Traversable t => Traversal (t a) (t b) a b
 traversed = wander traverse
 
 traverseOf :: Traversal s t a b -> (forall f. Applicative f => (a -> f b) -> s -> f t)
 traverseOf p = runStar . p . Star
+
+element :: forall p s t a. Wander p => Int -> Traversal s t a a -> p a a -> p s t
+element i trav = _
