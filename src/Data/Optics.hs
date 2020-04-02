@@ -184,6 +184,31 @@ infixr 4 /~
 divOver :: forall s t a. Fractional a => Setter s t a a -> a -> s -> t
 divOver setter = over setter . (/)
 
+infixr 4 ||~
+(||~) = disjOver
+
+disjOver :: forall s t a. Setter s t Bool Bool -> Bool -> s -> t
+disjOver setter = over setter . (||)
+
+infixr 4 &&~
+(&&~) = disjOver
+
+conjOver :: forall s t a. Setter s t Bool Bool -> Bool -> s -> t
+conjOver setter = over setter . (&&)
+
+infixr 4  <>~
+(<>~) :: forall s t a. Semigroup a => Setter s t a a -> a -> s -> t
+(<>~) = appendOver
+
+appendOver :: forall s t a. Semigroup a => Setter s t a a -> a -> s -> t
+appendOver setter = over setter . (<>)
+
+infixr 4 ?~
+(?~) = setJust
+
+setJust :: forall s t a b. Setter s t a (Maybe b) -> b -> s -> t
+setJust setter = set setter . Just
+
 infix 4 .=
 (.=) :: forall s a b m. MonadState s m => Setter s s a b -> b -> m ()
 (.=) = assign
@@ -197,6 +222,62 @@ infix 4 %=
 
 modifying :: forall s a b m. MonadState s m => Setter s s a b -> (a -> b) -> m ()
 modifying setter f = void . modify $ over setter f
+
+infix 4 +=
+(+=) :: forall s a m. MonadState s m => Num a => Setter s s a a -> a -> m ()
+(+=) = addModifying
+
+addModifying :: forall s a m. MonadState s m => Num a => Setter s s a a -> a -> m ()
+addModifying setter = modifying setter . (+)
+
+infix 4 -=
+(-=) :: forall s a m. MonadState s m => Num a => Setter s s a a -> a -> m ()
+(-=) = subModifying
+
+subModifying :: forall s a m. MonadState s m => Num a => Setter s s a a -> a -> m ()
+subModifying setter = modifying setter . (-)
+
+infix 4 *=
+(*=) :: forall s a m. MonadState s m => Num a => Setter s s a a -> a -> m ()
+(*=) = mulModifying
+
+mulModifying :: forall s a m. MonadState s m => Num a => Setter s s a a -> a -> m ()
+mulModifying setter = modifying setter . (*)
+
+infix 4 /=
+(/=) :: forall s a m. MonadState s m => Fractional a => Setter s s a a -> a -> m ()
+(/=) = divModifying
+
+divModifying :: forall s a m. MonadState s m => Fractional a => Setter s s a a -> a -> m ()
+divModifying setter = modifying setter . (/)
+
+infix 4 ||=
+(||=) :: forall s m. MonadState s m => Setter s s Bool Bool -> Bool -> m ()
+(||=) = disjModifying
+
+disjModifying :: forall s m. MonadState s m => Setter s s Bool Bool -> Bool -> m ()
+disjModifying setter = modifying setter . (||)
+
+infix 4 &&=
+(&&=) :: forall s m. MonadState s m => Setter s s Bool Bool -> Bool -> m ()
+(&&=) = disjModifying
+
+conjModifying :: forall s m. MonadState s m => Setter s s Bool Bool -> Bool -> m ()
+conjModifying setter = modifying setter . (&&)
+
+infix 4 <>=
+(<>=) :: forall s a m. MonadState s m => Semigroup a => Setter s s a a -> a -> m ()
+(<>=) = appendModifying
+
+appendModifying :: forall s a m. MonadState s m => Semigroup a => Setter s s a a -> a -> m ()
+appendModifying setter = modifying setter . (<>)
+
+infix 4 ?=
+(?=) :: forall s a b m. MonadState s m => Setter s s a (Maybe b) -> b -> m ()
+(?=) = assignJust
+
+assignJust :: forall s a b m. MonadState s m => Setter s s a (Maybe b) -> b -> m ()
+assignJust setter = assign setter . Just
 
 --------------
 --- Getter ---
