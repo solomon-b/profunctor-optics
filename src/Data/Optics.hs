@@ -9,7 +9,6 @@ import Data.Monoid
 import Data.Profunctor
 import Data.Foldable
 import Control.Applicative
-import Control.Category ((<<<))
 import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.State
@@ -163,25 +162,25 @@ infixr 4 +~
 (+~) = addOver
 
 addOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
-addOver setter = over setter <<< (+)
+addOver setter = over setter . (+)
 
 infixr 4 -~
 (-~) = subOver
 
 subOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
-subOver setter = over setter <<< (-)
+subOver setter = over setter . (-)
 
 infixr 4 *~
 (*~) = mulOver
 
 mulOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
-mulOver setter = over setter <<< (*)
+mulOver setter = over setter . (*)
 
 infixr 4 /~
 (/~) = divOver
 
 divOver :: forall s t a. Fractional a => Setter s t a a -> a -> s -> t
-divOver setter = over setter <<< (/)
+divOver setter = over setter . (/)
 
 infix 4 .=
 (.=) :: forall s a b m. MonadState s m => Setter s s a b -> b -> m ()
