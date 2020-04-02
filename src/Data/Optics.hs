@@ -206,6 +206,12 @@ type AGetter s t a b = Fold a s t a b
 view :: forall s t a b. AGetter s t a b -> s ->  a
 view l = runForget $ l (Forget id)
 
+infixl 8 ^.
+(^.) = viewOn
+
+viewOn :: forall s t a b. s -> AGetter s t a b -> a
+viewOn = flip view
+
 ------------
 --- Lens ---
 ------------
@@ -264,14 +270,23 @@ type Fold r s t a b = Optic (Forget r) s t a b
 preview :: forall s t a b. Fold (First a) s t a b -> s -> Maybe a
 preview f s = getFirst . ($ s) . runForget $ f (Forget $ \a -> First $ Just a)
 
+infixl 8 ^?
+(^?) = previewOn
+
 previewOn :: forall s t a b. s -> Fold (First a) s t a b -> Maybe a
-previewOn s f = preview f s
+previewOn s fold = preview fold s
 
 foldMapOf :: forall s t a b r. Fold r s t a b -> (a -> r) -> s -> r
-foldMapOf f g = runForget $ f (Forget g)
+foldMapOf fold f = runForget $ fold (Forget f)
 
 foldOf :: forall s t a b. Fold a s t a b -> s -> a
-foldOf f = foldMapOf f id
+foldOf fold = foldMapOf fold id
+
+foldrOf :: forall s t a b r. Fold (Endo r) s t a b -> (a -> r -> r) -> r -> s -> r
+foldrOf fold f r = flip appEndo r . foldMapOf fold (Endo . f)
+
+folded :: forall g a b t r. Monoid r => Foldable g => Fold r (g a) b a t
+folded  = Forget . foldMap . runForget
 
 -----------------
 --- Traversal ---
