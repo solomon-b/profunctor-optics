@@ -221,6 +221,9 @@ to f p = Forget (runForget p . f)
 takeBoth :: forall s t a b c d. AGetter s t a b -> AGetter s t c d -> Getter s t (a, c) (b, d)
 takeBoth p q = to $ view p &&& view q
 
+use :: forall s t a b m. MonadState s m => Getter s t a b -> m a
+use getter = gets $ view getter
+
 ------------
 --- Lens ---
 ------------
