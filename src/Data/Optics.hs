@@ -28,6 +28,14 @@ class Profunctor p => Demux p where
 class Mux p => Muxative p where
   terminal :: p () ()
 
+infixr 3 &&&
+(&&&) :: Mux p => p a b -> p a c -> p a (b, c)
+(&&&) f g = dimap (\a -> (a, a)) id $ mux f g
+
+infixr 3 ***
+(***) :: Mux p => p a a' -> p b b' -> p (a, b) (a', b')
+(***) = mux
+
 passthru :: (Strong p, Muxative p) => p a a
 passthru = dimap ((),) snd $ first' terminal
 
@@ -125,8 +133,8 @@ adapter = dimap
 from :: Adapter s t a b -> s -> a
 from adapt = runForget . adapt $ Forget id
 
-to :: Adapter s t a b -> b -> t
-to adapt = unTagged . adapt . Tagged
+toAdapter :: Adapter s t a b -> b -> t
+toAdapter adapt = unTagged . adapt . Tagged
 
 flatten :: Adapter ((a, b), c) ((a', b'), c') (a, b, c) (a', b', c')
 flatten = adapter from_ to_
@@ -195,6 +203,8 @@ modifying setter f = void . modify $ over setter f
 --------------
 
 type AGetter s t a b = Fold a s t a b
+type Getter s t a b = forall r. Fold r s t a b
+--type Fold r s t a b = Optic (Forget r) s t a b
 
 view :: forall s t a b. AGetter s t a b -> s ->  a
 view l = runForget $ l (Forget id)
@@ -204,6 +214,12 @@ infixl 8 ^.
 
 viewOn :: forall s t a b. s -> AGetter s t a b -> a
 viewOn = flip view
+
+to :: forall s t a b. (s -> a) -> Getter s t a b
+to f p = Forget (runForget p . f)
+
+takeBoth :: forall s t a b c d. AGetter s t a b -> AGetter s t c d -> Getter s t (a, c) (b, d)
+takeBoth p q = to $ view p &&& view q
 
 ------------
 --- Lens ---
@@ -310,6 +326,3 @@ traversed = wander traverse
 
 traverseOf :: Traversal s t a b -> (forall f. Applicative f => (a -> f b) -> s -> f t)
 traverseOf p = runStar . p . Star
-
-element :: forall p s t a. Wander p => Int -> Traversal s t a a -> p a a -> p s t
-element i trav = _
