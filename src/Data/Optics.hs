@@ -9,7 +9,11 @@ import Data.Monoid
 import Data.Profunctor
 import Data.Foldable
 import Control.Applicative
+import Control.Category ((<<<))
+import Control.Monad
 import Control.Monad.Identity
+import Control.Monad.State
+
 
 -------------------
 --- Typeclasses ---
@@ -143,11 +147,55 @@ flatten = adapter from_ to_
 
 type Setter s t a b = Optic (->) s t a b
 
+infixr 4 %~
+(%~) = over
+
 over :: forall s t a b. Setter s t a b -> (a -> b) -> s -> t
 over = id
 
+infixr 4 .~
+(.~) = set
+
 set :: forall s t a b. Setter s t a b -> b -> s -> t
 set setter b = over setter (const b)
+
+infixr 4 +~
+(+~) = addOver
+
+addOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
+addOver setter = over setter <<< (+)
+
+infixr 4 -~
+(-~) = subOver
+
+subOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
+subOver setter = over setter <<< (-)
+
+infixr 4 *~
+(*~) = mulOver
+
+mulOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
+mulOver setter = over setter <<< (*)
+
+infixr 4 /~
+(/~) = divOver
+
+divOver :: forall s t a. Fractional a => Setter s t a a -> a -> s -> t
+divOver setter = over setter <<< (/)
+
+infix 4 .=
+(.=) :: forall s a b m. MonadState s m => Setter s s a b -> b -> m ()
+(.=) = assign
+
+assign :: forall s a b m. MonadState s m => Setter s s a b -> b -> m ()
+assign setter b = void . modify $ set setter b
+
+infix 4 %=
+(%=) :: forall s a b m. MonadState s m => Setter s s a b -> (a -> b) -> m ()
+(%=) = modifying
+
+modifying :: forall s a b m. MonadState s m => Setter s s a b -> (a -> b) -> m ()
+modifying setter f = void . modify $ over setter f
 
 --------------
 --- Getter ---
@@ -221,6 +269,9 @@ previewOn s f = preview f s
 
 foldMapOf :: forall s t a b r. Fold r s t a b -> (a -> r) -> s -> r
 foldMapOf f g = runForget $ f (Forget g)
+
+foldOf :: forall s t a b. Fold a s t a b -> s -> a
+foldOf f = foldMapOf f id
 
 -----------------
 --- Traversal ---
