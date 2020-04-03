@@ -8,7 +8,6 @@ module Data.Optics where
 
 import Data.Monoid
 import Data.Profunctor
-import Data.Foldable
 import Data.Bifoldable
 import Control.Applicative
 import Control.Monad
@@ -85,7 +84,7 @@ instance Applicative f => Muxative (Star f) where
   terminal = Star $ \() -> pure ()
 
 instance Applicative f => Wander (Star f) where
-  wander :: (forall f. Applicative f => (a -> f b) -> s -> f t)
+  wander :: (forall g. Applicative g => (a -> g b) -> s -> g t)
     -> Star f a b -> Star f s t
   wander trav (Star f) = Star $ trav f
 
@@ -93,7 +92,7 @@ newtype Tagged a b = Tagged { unTagged :: b }
 
 instance Profunctor Tagged where
   dimap :: (a' -> a) -> (b -> b') -> Tagged a b -> Tagged a' b'
-  dimap f g (Tagged b) = Tagged (g b)
+  dimap _ g (Tagged b) = Tagged (g b)
 
 instance Choice Tagged where
   left' :: Tagged a b -> Tagged (Either a c) (Either b c)
@@ -166,51 +165,59 @@ flatten = adapter from_ to_
 ---------------
 
 infixr 4 %~
+(%~) :: forall s t a b. Setter s t a b -> (a -> b) -> s -> t
 (%~) = over
 
 over :: forall s t a b. Setter s t a b -> (a -> b) -> s -> t
 over = id
 
 infixr 4 .~
+(.~) :: forall s t a b. Setter s t a b -> b -> s -> t
 (.~) = set
 
 set :: forall s t a b. Setter s t a b -> b -> s -> t
 set setter b = over setter (const b)
 
 infixr 4 +~
+(+~) :: forall s t a. Num a => Setter s t a a -> a -> s -> t
 (+~) = addOver
 
 addOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
 addOver setter = over setter . (+)
 
 infixr 4 -~
+(-~) :: forall s t a. Num a => Setter s t a a -> a -> s -> t
 (-~) = subOver
 
 subOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
 subOver setter = over setter . (-)
 
 infixr 4 *~
+(*~) :: forall s t a. Num a => Setter s t a a -> a -> s -> t
 (*~) = mulOver
 
 mulOver :: forall s t a. Num a => Setter s t a a -> a -> s -> t
 mulOver setter = over setter . (*)
 
 infixr 4 /~
+(/~) :: forall s t a. Fractional a => Setter s t a a -> a -> s -> t
 (/~) = divOver
 
 divOver :: forall s t a. Fractional a => Setter s t a a -> a -> s -> t
 divOver setter = over setter . (/)
 
 infixr 4 ||~
+(||~) :: forall s t. Setter s t Bool Bool -> Bool -> s -> t
 (||~) = disjOver
 
-disjOver :: forall s t a. Setter s t Bool Bool -> Bool -> s -> t
+disjOver :: forall s t. Setter s t Bool Bool -> Bool -> s -> t
 disjOver setter = over setter . (||)
 
 infixr 4 &&~
+(&&~) :: forall s t. Setter s t Bool Bool -> Bool -> s -> t
 (&&~) = disjOver
 
-conjOver :: forall s t a. Setter s t Bool Bool -> Bool -> s -> t
+conjOver :: forall s t. Setter s t Bool Bool -> Bool -> s -> t
 conjOver setter = over setter . (&&)
 
 infixr 4  <>~
@@ -221,6 +228,7 @@ appendOver :: forall s t a. Semigroup a => Setter s t a a -> a -> s -> t
 appendOver setter = over setter . (<>)
 
 infixr 4 ?~
+(?~) :: forall s t a b. Setter s t a (Maybe b) -> b -> s -> t
 (?~) = setJust
 
 setJust :: forall s t a b. Setter s t a (Maybe b) -> b -> s -> t
@@ -304,6 +312,7 @@ view :: forall s t a b. AGetter s t a b -> s ->  a
 view l = runForget $ l (Forget id)
 
 infixl 8 ^.
+(^.) :: forall s t a b. s -> AGetter s t a b -> a
 (^.) = viewOn
 
 viewOn :: forall s t a b. s -> AGetter s t a b -> a
@@ -323,10 +332,10 @@ use getter = gets $ view getter
 --------------
 
 lens :: forall s t a b. (s -> a) -> (s -> b -> t) -> Lens s t a b
-lens get set = lens' $ \s -> (get s, set s)
+lens get' set' = lens' $ \s -> (get' s, set' s)
 
 lens' :: forall s t a b. (s -> (a, b -> t)) -> Lens s t a b
-lens' to l = dimap to (\(b, f) -> f b) (first' l)
+lens' to' l = dimap to' (\(b, f) -> f b) (first' l)
 
 _1 :: forall a b c. Lens (a, c) (b, c) a b
 _1 = lens fst (\(_, c) b -> (b, c))
@@ -339,7 +348,7 @@ _2 = lens snd (\(c, _) b -> (c, b))
 --------------
 
 prism :: forall s t a b. (b -> t) -> (s -> Either t a) -> Prism s t a b
-prism to from pab = dimap from (either id id) $ right' $ rmap to pab
+prism to' from' pab = dimap from' (either id id) $ right' $ rmap to' pab
 
 _Nothing :: forall a b. forall p. Choice p => p () () -> p (Maybe a) (Maybe b)
 _Nothing = prism (const Nothing) (maybe (Right ()) (const (Left Nothing)))
@@ -360,7 +369,7 @@ _Cons = prism (uncurry (:)) $ \case
 
 _Nil :: forall a b. Prism [a] [b] () b
 _Nil = prism pure $ \case
-  x:xs -> Left []
+  _:_ -> Left []
   [] -> Right ()
 
 -------------
@@ -371,6 +380,7 @@ preview :: forall s t a b. Fold (First a) s t a b -> s -> Maybe a
 preview f s = getFirst . ($ s) . runForget $ f (Forget $ \a -> First $ Just a)
 
 infixl 8 ^?
+(^?) :: forall s t a b. s -> Fold (First a) s t a b -> Maybe a
 (^?) = previewOn
 
 previewOn :: forall s t a b. s -> Fold (First a) s t a b -> Maybe a
@@ -396,13 +406,14 @@ toListOf :: forall s t a b. Fold (Endo [a]) s t a b -> s -> [a]
 toListOf fold = foldrOf fold (:) []
 
 infixl 8 ^..
+(^..) :: forall s t a b. s -> Fold (Endo [a]) s t a b -> [a]
 (^..) = toListOfOn
 
 toListOfOn :: forall s t a b. s -> Fold (Endo [a]) s t a b -> [a]
 toListOfOn = flip toListOf
 
 filtered :: forall p a. Choice p => (a -> Bool) -> Optic p a a a a
-filtered pred = dimap (\a -> if pred a then Right a else Left a) (either id id) . right'
+filtered pred' = dimap (\a -> if pred' a then Right a else Left a) (either id id) . right'
 
 ------------------
 --- Traversals ---
