@@ -9,6 +9,7 @@ module Data.Optics where
 import Data.Monoid
 import Data.Profunctor
 import Data.Foldable
+import Data.Bifoldable
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Identity
@@ -39,7 +40,7 @@ infixr 3 ***
 passthru :: (Strong p, Muxative p) => p a a
 passthru = dimap ((),) snd $ first' terminal
 
-class (Strong p, Choice p) => Wander p where
+class (Strong p, Choice p, Muxative p) => Wander p where
   wander :: forall s t a b.
     (forall f. Applicative f => (a -> f b) -> s -> f t) -> p a b -> p s t
 
@@ -110,43 +111,59 @@ instance Muxative Tagged where
 
 -- newtype Forget r a b = Forget { runForget :: a -> r }
 
+instance Monoid r => Mux (Forget r) where
+  mux :: Forget r a b -> Forget r c d -> Forget r (a, c) (b, d)
+  mux f g = Forget $ bifoldMap (runForget f) (runForget g)
+
+instance Monoid r => Muxative (Forget r) where
+  terminal :: Forget r () ()
+  terminal = Forget $ const mempty
+
 instance Monoid r => Wander (Forget r) where
   wander :: (forall f. Applicative f => (a -> f b) -> s -> f t)
     -> Forget r a b -> Forget r s t
   wander trav (Forget f) = (\g -> Forget (getConst . g)) $ trav $ Const . f
+  --wander trav (Forget f) = (\g -> Forget (getConst . g)) $ trav $ Const . f
 
---------------
---- Optics ---
---------------
+--------------------
+--- Optics Types ---
+--------------------
 
 type Optic p s t a b = p a b -> p s t
-
----------------
---- Adapter ---
----------------
-
 type Adapter s t a b = forall p. Profunctor p => Optic p s t a b
+type Setter s t a b = Optic (->) s t a b
+type AGetter s t a b = Fold a s t a b
+type Getter s t a b = forall r. Fold r s t a b
+type Lens s t a b = forall p. Strong p => Optic p s t a b
+type Prism s t a b = forall p. Choice p => Optic p s t a b
+type Fold r s t a b = Optic (Forget r) s t a b
+type Traversal s t a b = forall p. Wander p => Optic p s t a b
+--type Traversal s t a b =
+--  forall p. (Strong p, Choice p, Muxative p) => Optic p s t a b
+
+----------------
+--- Adapters ---
+----------------
 
 adapter :: forall s t a b. (s -> a) -> (b -> t) -> Adapter s t a b
 adapter = dimap
 
-from :: Adapter s t a b -> s -> a
+from :: forall s t a b. Adapter s t a b -> s -> a
 from adapt = runForget . adapt $ Forget id
 
-toAdapter :: Adapter s t a b -> b -> t
+toAdapter :: forall s t a b. Adapter s t a b -> b -> t
 toAdapter adapt = unTagged . adapt . Tagged
 
-flatten :: Adapter ((a, b), c) ((a', b'), c') (a, b, c) (a', b', c')
+flatten :: forall a a' b b' c c'.
+  Adapter ((a, b), c) ((a', b'), c') (a, b, c) (a', b', c')
 flatten = adapter from_ to_
   where
     from_ ((x, y), z) = (x, y, z)
     to_ (x, y, z) = ((x, y), z)
 
---------------
---- Setter ---
---------------
-
-type Setter s t a b = Optic (->) s t a b
+---------------
+--- Setters ---
+---------------
 
 infixr 4 %~
 (%~) = over
@@ -279,13 +296,9 @@ infix 4 ?=
 assignJust :: forall s a b m. MonadState s m => Setter s s a (Maybe b) -> b -> m ()
 assignJust setter = assign setter . Just
 
---------------
---- Getter ---
---------------
-
-type AGetter s t a b = Fold a s t a b
-type Getter s t a b = forall r. Fold r s t a b
---type Fold r s t a b = Optic (Forget r) s t a b
+---------------
+--- Getters ---
+---------------
 
 view :: forall s t a b. AGetter s t a b -> s ->  a
 view l = runForget $ l (Forget id)
@@ -305,11 +318,9 @@ takeBoth p q = to $ view p &&& view q
 use :: forall s t a b m. MonadState s m => Getter s t a b -> m a
 use getter = gets $ view getter
 
-------------
---- Lens ---
-------------
-
-type Lens s t a b = forall p. Strong p => Optic p s t a b
+--------------
+--- Lenses ---
+--------------
 
 lens :: forall s t a b. (s -> a) -> (s -> b -> t) -> Lens s t a b
 lens get set = lens' $ \s -> (get s, set s)
@@ -323,11 +334,9 @@ _1 = lens fst (\(_, c) b -> (b, c))
 _2 :: forall a b c. Lens (c, a) (c, b) a b
 _2 = lens snd (\(c, _) b -> (c, b))
 
--------------
---- Prism ---
--------------
-
-type Prism s t a b = forall p. Choice p => Optic p s t a b
+--------------
+--- Prisms ---
+--------------
 
 prism :: forall s t a b. (b -> t) -> (s -> Either t a) -> Prism s t a b
 prism to from pab = dimap from (either id id) $ right' $ rmap to pab
@@ -354,11 +363,9 @@ _Nil = prism pure $ \case
   x:xs -> Left []
   [] -> Right ()
 
-------------
---- Fold ---
-------------
-
-type Fold r s t a b = Optic (Forget r) s t a b
+-------------
+--- Folds ---
+-------------
 
 preview :: forall s t a b. Fold (First a) s t a b -> s -> Maybe a
 preview f s = getFirst . ($ s) . runForget $ f (Forget $ \a -> First $ Just a)
@@ -397,16 +404,15 @@ toListOfOn = flip toListOf
 filtered :: forall p a. Choice p => (a -> Bool) -> Optic p a a a a
 filtered pred = dimap (\a -> if pred a then Right a else Left a) (either id id) . right'
 
------------------
---- Traversal ---
------------------
-
-type Traversal s t a b = forall p. Wander p => Optic p s t a b
---type Traversal s t a b =
---  forall p. (Strong p, Choice p, Muxative p) => Optic p s t a b
+------------------
+--- Traversals ---
+------------------
 
 traversed :: forall t a b. Traversable t => Traversal (t a) (t b) a b
 traversed = wander traverse
 
-traverseOf :: Traversal s t a b -> (forall f. Applicative f => (a -> f b) -> s -> f t)
+traverseOf :: forall f s t a b. Optic (Star f) s t a b -> (a -> f b) -> s -> f t
 traverseOf p = runStar . p . Star
+
+sequenceOf :: forall f s t a. Applicative f => Optic (Star f) s t (f a) a -> s -> f t
+sequenceOf p = traverseOf p id
