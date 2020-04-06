@@ -147,6 +147,9 @@ type Traversal s t a b = forall p. Wander p => Optic p s t a b
 adapter :: forall s t a b. (s -> a) -> (b -> t) -> Adapter s t a b
 adapter = dimap
 
+--withAdapter :: forall s t a b r. AnIso s t a b -> ((s -> a) -> (b -> t) -> r) -> r
+--withAdapter 
+
 from :: forall s t a b. Adapter s t a b -> s -> a
 from adapt = runForget . adapt $ Forget id
 
