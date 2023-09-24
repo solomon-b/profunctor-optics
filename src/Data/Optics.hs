@@ -1,14 +1,15 @@
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Arrows #-}
 module Data.Optics where
 
 import Data.Monoid
 import Data.Profunctor
 import Data.Bifoldable
+import Control.Arrow
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Identity
@@ -28,9 +29,9 @@ class Profunctor p => Demux p where
 class Mux p => Muxative p where
   terminal :: p () ()
 
-infixr 3 &&&
-(&&&) :: Mux p => p a b -> p a c -> p a (b, c)
-(&&&) f g = dimap (\a -> (a, a)) id $ mux f g
+--infixr 3 &&&
+--(&&&) :: Mux p => p a b -> p a c -> p a (b, c)
+--(&&&) f g = dimap (\a -> (a, a)) id $ mux f g
 
 infixr 3 ***
 (***) :: Mux p => p a a' -> p b b' -> p (a, b) (a', b')
@@ -122,7 +123,6 @@ instance Monoid r => Wander (Forget r) where
   wander :: (forall f. Applicative f => (a -> f b) -> s -> f t)
     -> Forget r a b -> Forget r s t
   wander trav (Forget f) = (\g -> Forget (getConst . g)) $ trav $ Const . f
-  --wander trav (Forget f) = (\g -> Forget (getConst . g)) $ trav $ Const . f
 
 --------------------
 --- Optics Types ---
@@ -340,11 +340,19 @@ lens get' set' = lens' $ \s -> (get' s, set' s)
 lens' :: forall s t a b. (s -> (a, b -> t)) -> Lens s t a b
 lens' to' l = dimap to' (\(b, f) -> f b) (first' l)
 
+-- lens' :: forall s t a b. (s -> (a, b -> t)) -> Lens s t a b
+-- lens' to' l = arr to' >>> first l >>> arr (\(b, f) -> f b)
+
 _1 :: forall a b c. Lens (a, c) (b, c) a b
 _1 = lens fst (\(_, c) b -> (b, c))
 
 _2 :: forall a b c. Lens (c, a) (c, b) a b
 _2 = lens snd (\(c, _) b -> (c, b))
+
+test :: forall a b c. Lens (a, c) (b, c) a b
+test = proc input -> do
+  x <- _1 -< input
+  returnA -< x
 
 --------------
 --- Prisms ---
